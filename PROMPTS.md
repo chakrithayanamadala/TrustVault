@@ -51,3 +51,8 @@ This log starts with the first implementation pass on 2026-10-22. Entries are re
 - **What I did instead:** Kept the nonce on `request.state`, tested both the HTML response and API security headers, then ran the full test suite (10 passed). This test is an HTTP-level header/rendering check, not a substitute for browser CSP testing.
 
 The earlier entries above were present in the starting checkout and reference commit `7940f47`, which is not in this repository's available Git history. I have not treated that reference as a commit made or independently verified in this checkout.
+
+- **Asked:** Add adversarial regression coverage for the permission matrix and ensure name/owner/category/date filters never escape the caller's authorized document set.
+- **Produced:** Tests for a named read grant, a separate edit grant, owner-only deletion, denied cross-user metadata/download/edit/delete, and all four list filters. Commit: [f12140b](https://github.com/chakrithayanamadala/TrustVault/commit/f12140b).
+- **What was wrong or incomplete:** My initial assertion expected `403` when a read-only grantee tried to delete. The endpoint checks edit access before its owner-only deletion rule, so it correctly returns the same `404` used to hide documents from ungranted users. The failing test exposed my mistaken expectation, not an implementation bug.
+- **What I did instead:** Matched the assertion to the documented not-found policy, retained the separate `403` assertion for an editor who has edit access but is not the owner, and reran all tests (12 passed). These checks would fail if the tested read/edit authorization boundary were removed.
