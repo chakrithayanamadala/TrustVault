@@ -1,0 +1,2 @@
+# Replace the example host with the deployed TrustVault API URL (Vercel or Render).
+/* https://your-trustvault-api.example.com/:splat 200!

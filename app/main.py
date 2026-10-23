@@ -6,12 +6,15 @@ import os
 import secrets
 import sqlite3
 import uuid
+from collections.abc import Iterator, Sequence
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any, Protocol
 from urllib.parse import quote
 
+import psycopg
+from psycopg.rows import dict_row
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, Response
@@ -19,10 +22,54 @@ from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = ROOT / "schema.sql"
+POSTGRES_SCHEMA_PATH = ROOT / "schema_postgres.sql"
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 SESSION_HOURS = 8
 ROLES = {"admin", "owner", "viewer"}
 ZERO_HASH = "0" * 64
+
+
+class DatabaseRow(Protocol):
+    def __getitem__(self, key: str) -> Any: ...
+
+    def keys(self) -> Sequence[str]: ...
+
+
+class QueryResult(Protocol):
+    def fetchone(self) -> DatabaseRow | None: ...
+
+    def __iter__(self) -> Iterator[DatabaseRow]: ...
+
+
+class DatabaseConnection(Protocol):
+    def execute(self, query: str, parameters: Sequence[Any] = ()) -> QueryResult: ...
+
+    def commit(self) -> None: ...
+
+    def rollback(self) -> None: ...
+
+    def close(self) -> None: ...
+
+
+class PostgresConnection:
+    def __init__(self, connection: psycopg.Connection[dict[str, Any]]):
+        self.connection = connection
+
+    def execute(self, query: str, parameters: Sequence[Any] = ()) -> psycopg.Cursor[dict[str, Any]]:
+        try:
+            return self.connection.execute(query.replace("?", "%s"), tuple(parameters))
+        except psycopg.errors.UniqueViolation as error:
+            self.connection.rollback()
+            raise sqlite3.IntegrityError(str(error)) from error
+
+    def commit(self) -> None:
+        self.connection.commit()
+
+    def rollback(self) -> None:
+        self.connection.rollback()
+
+    def close(self) -> None:
+        self.connection.close()
 
 
 def utc_now() -> str:
@@ -37,7 +84,14 @@ DUMMY_PASSWORD_SALT = b"trustvault-dummy-salt"
 DUMMY_PASSWORD_HASH = password_hash("not-a-real-password", DUMMY_PASSWORD_SALT)
 
 
-def open_db(db_path: str) -> sqlite3.Connection:
+def open_db(db_path: str) -> DatabaseConnection:
+    if db_path.startswith(("postgres://", "postgresql://")):
+        connection = psycopg.connect(
+            db_path,
+            connect_timeout=10,
+            row_factory=dict_row,
+        )
+        return PostgresConnection(connection)
     connection = sqlite3.connect(db_path, timeout=10, check_same_thread=False)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
@@ -46,7 +100,7 @@ def open_db(db_path: str) -> sqlite3.Connection:
 
 
 def append_audit(
-    connection: sqlite3.Connection,
+    connection: DatabaseConnection,
     actor_id: str | None,
     action: str,
     document_id: str | None = None,
@@ -78,7 +132,7 @@ def append_audit(
     )
 
 
-def verify_audit(connection: sqlite3.Connection) -> bool:
+def verify_audit(connection: DatabaseConnection) -> bool:
     previous_hash = ZERO_HASH
     for row in connection.execute("SELECT * FROM audit_events ORDER BY id"):
         if row["previous_hash"] != previous_hash:
@@ -129,7 +183,11 @@ def create_app(
     encryption_key: bytes | None = None,
     environment: str | None = None,
 ) -> FastAPI:
-    database_path = db_path or os.getenv("TRUSTVAULT_DATABASE", str(ROOT / "trustvault.db"))
+    database_path = (
+        db_path
+        or os.getenv("TRUSTVAULT_DATABASE_URL")
+        or os.getenv("TRUSTVAULT_DATABASE", str(ROOT / "trustvault.db"))
+    )
     runtime_environment = environment or os.getenv("TRUSTVAULT_ENV", "development")
     configured_key = encryption_key
     raw_key = os.getenv("TRUSTVAULT_ENCRYPTION_KEY")
@@ -153,19 +211,34 @@ def create_app(
             raise RuntimeError("Production requires TRUSTVAULT_ADMIN_USERNAME and TRUSTVAULT_ADMIN_PASSWORD")
         if admin_password is not None and len(admin_password) < 12:
             raise RuntimeError("TRUSTVAULT_ADMIN_PASSWORD must be at least 12 characters")
+        if runtime_environment == "production" and not database_path.startswith(
+            ("postgres://", "postgresql://")
+        ):
+            raise RuntimeError("Production requires TRUSTVAULT_DATABASE_URL with PostgreSQL")
         connection = open_db(database_path)
         try:
-            connection.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+            if isinstance(connection, PostgresConnection):
+                schema = POSTGRES_SCHEMA_PATH.read_text(encoding="utf-8")
+                for statement in schema.split(";"):
+                    if statement.strip():
+                        connection.execute(statement)
+            else:
+                connection.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
             if admin_username and admin_password:
-                existing = connection.execute(
-                    "SELECT id FROM users WHERE username = ?", (admin_username,)
-                ).fetchone()
-                if not existing:
-                    salt = secrets.token_bytes(16)
-                    connection.execute(
-                        "INSERT INTO users (id, username, password_salt, password_hash, role, created_at) VALUES (?, ?, ?, ?, 'admin', ?)",
-                        (str(uuid.uuid4()), admin_username, salt, password_hash(admin_password, salt), utc_now()),
-                    )
+                salt = secrets.token_bytes(16)
+                connection.execute(
+                    """INSERT INTO users
+                       (id, username, password_salt, password_hash, role, created_at)
+                       VALUES (?, ?, ?, ?, 'admin', ?)
+                       ON CONFLICT DO NOTHING""",
+                    (
+                        str(uuid.uuid4()),
+                        admin_username,
+                        salt,
+                        password_hash(admin_password, salt),
+                        utc_now(),
+                    ),
+                )
             connection.commit()
         finally:
             connection.close()
@@ -207,12 +280,12 @@ def create_app(
         finally:
             connection.close()
 
-    Db = Annotated[sqlite3.Connection, Depends(db_dependency)]
+    Db = Annotated[DatabaseConnection, Depends(db_dependency)]
 
     def current_user(
         authorization: Annotated[str | None, Header()] = None,
-        connection: sqlite3.Connection = Depends(db_dependency),
-    ) -> sqlite3.Row:
+        connection: DatabaseConnection = Depends(db_dependency),
+    ) -> DatabaseRow:
         if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(status_code=401, detail="Authentication required")
         token = authorization[7:]
@@ -227,18 +300,18 @@ def create_app(
             raise HTTPException(status_code=401, detail="Invalid session")
         return user
 
-    User = Annotated[sqlite3.Row, Depends(current_user)]
+    User = Annotated[DatabaseRow, Depends(current_user)]
 
-    def require_admin(user: sqlite3.Row) -> None:
+    def require_admin(user: DatabaseRow) -> None:
         if user["role"] != "admin":
             raise HTTPException(status_code=403, detail="Administrator role required")
 
     def document_access(
-        connection: sqlite3.Connection,
+        connection: DatabaseConnection,
         document_id: str,
-        user: sqlite3.Row,
+        user: DatabaseRow,
         permission: str = "read",
-    ) -> sqlite3.Row:
+    ) -> DatabaseRow:
         document = connection.execute("SELECT * FROM documents WHERE id = ?", (document_id,)).fetchone()
         grant = connection.execute(
             "SELECT permission FROM permissions WHERE document_id = ? AND user_id = ?",
@@ -259,7 +332,7 @@ def create_app(
             append_audit(connection, user["id"], "metadata_read", document_id)
         return document
 
-    def document_response(document: sqlite3.Row) -> dict:
+    def document_response(document: DatabaseRow) -> dict:
         return {
             "id": document["id"],
             "owner_id": document["owner_id"],
@@ -286,7 +359,9 @@ def create_app(
 
     @api.post("/api/auth/login")
     def login(connection: Db, username: str = Form(), password: str = Form()):
-        user = connection.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+        user = connection.execute(
+            "SELECT * FROM users WHERE LOWER(username) = LOWER(?)", (username,)
+        ).fetchone()
         salt = user["password_salt"] if user else DUMMY_PASSWORD_SALT
         expected_hash = user["password_hash"] if user else DUMMY_PASSWORD_HASH
         password_matches = hmac.compare_digest(password_hash(password, salt), expected_hash)
@@ -332,7 +407,9 @@ def create_app(
     def list_users(connection: Db, user: User):
         if user["role"] not in {"admin", "owner"}:
             raise HTTPException(status_code=403, detail="Owner or administrator role required")
-        rows = connection.execute("SELECT id, username, role FROM users ORDER BY username COLLATE NOCASE")
+        rows = connection.execute(
+            "SELECT id, username, role FROM users ORDER BY LOWER(username)"
+        )
         return [dict(row) for row in rows]
 
     @api.post("/api/documents", status_code=201)
@@ -355,9 +432,11 @@ def create_app(
         safe_filename = "".join(character for character in basename if character.isprintable()) or "document"
         connection.execute(
             """INSERT INTO documents
-               (id, owner_id, name, category, filename, media_type, nonce, encrypted_content, created_at, updated_at)
+               (id, owner_id, name, category, filename, media_type, nonce, encrypted_content,
+                created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (document_id, user["id"], name, category, safe_filename, media_type, nonce, ciphertext, created_at, created_at),
+            (document_id, user["id"], name, category, safe_filename, media_type, nonce,
+             ciphertext, created_at, created_at),
         )
         append_audit(connection, user["id"], "upload", document_id, {"filename": safe_filename})
         return {"id": document_id, "name": name, "category": category, "created_at": created_at}

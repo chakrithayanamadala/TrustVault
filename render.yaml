@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: trustvault
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn index:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: TRUSTVAULT_ENV
+        value: production
+      - key: TRUSTVAULT_DATABASE_URL
+        sync: false
+      - key: TRUSTVAULT_ENCRYPTION_KEY
+        sync: false
+      - key: TRUSTVAULT_ADMIN_USERNAME
+        sync: false
+      - key: TRUSTVAULT_ADMIN_PASSWORD
+        sync: false
