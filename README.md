@@ -81,7 +81,7 @@ These are deployment configurations, not proof that a provider account has been 
 
 ## First users and demo data
 
-On a fresh database, the bootstrap administrator can create an owner and viewer at `POST /api/users`. Create a viewer the same way. Use unique passwords of at least 12 characters and deliver them out of band; never commit real passwords, access tokens, or encryption keys.
+On a fresh database, sign in as the bootstrap administrator and use **Create user** to provision owner or viewer accounts in the browser; `POST /api/users` remains available for API-based provisioning. Use unique passwords of at least 12 characters and deliver them out of band; never commit real passwords, access tokens, or encryption keys.
 
 Example user creation request after obtaining an admin bearer token:
 
