@@ -183,6 +183,28 @@ def test_production_startup_requires_bootstrap_admin(tmp_path, monkeypatch):
             pass
 
 
+def test_browser_response_has_nonce_csp_and_security_headers(tmp_path):
+    with make_client(tmp_path) as client:
+        response = client.get("/")
+
+        assert response.status_code == 200
+        csp = response.headers["content-security-policy"]
+        nonce_directive = next(part for part in csp.split(";") if "script-src" in part)
+        nonce = nonce_directive.split("'nonce-", 1)[1].split("'", 1)[0]
+        assert f'<script nonce="{nonce}">' in response.text
+        assert f'<style nonce="{nonce}">' in response.text
+        assert "'unsafe-inline'" not in csp
+        assert response.headers["x-content-type-options"] == "nosniff"
+        assert response.headers["x-frame-options"] == "DENY"
+        assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+
+        api_response = client.get("/health")
+        assert api_response.headers["content-security-policy"]
+        assert api_response.headers["permissions-policy"] == (
+            "camera=(), microphone=(), geolocation=()"
+        )
+
+
 def test_upload_rejects_invalid_signature_and_oversized_content(tmp_path):
     with make_client(tmp_path) as client:
         owner_headers = {"Authorization": f"Bearer {login(client, 'owner')}"}

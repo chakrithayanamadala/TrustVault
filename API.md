@@ -1,5 +1,7 @@
 # TrustVault API
 
+Every response includes a restrictive Content Security Policy and standard browser security headers. The browser app's inline script and styles use a per-response nonce; the CSP does not allow `unsafe-inline`.
+
 All API routes use JSON responses unless noted. Authenticated routes require `Authorization: Bearer <access_token>`. The login token is an opaque eight-hour server-side session. Document IDs are identifiers, not permissions; each document route checks ownership or a current grant.
 
 | Method and path | Who may call it | Authorization and behavior |
