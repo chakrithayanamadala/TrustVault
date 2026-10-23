@@ -1,6 +1,8 @@
 import sqlite3
+import os
 from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
+import uuid
 
 import app.main as trustvault
 from fastapi.testclient import TestClient
@@ -290,6 +292,20 @@ def test_production_startup_requires_bootstrap_admin(tmp_path, monkeypatch):
             pass
 
 
+def test_production_startup_requires_postgres(tmp_path, monkeypatch):
+    monkeypatch.setenv("TRUSTVAULT_ADMIN_USERNAME", "production-admin")
+    monkeypatch.setenv("TRUSTVAULT_ADMIN_PASSWORD", "production-test-password")
+    app = create_app(
+        str(tmp_path / "production.db"),
+        b"p" * 32,
+        environment="production",
+    )
+
+    with pytest.raises(RuntimeError, match="requires TRUSTVAULT_DATABASE_URL"):
+        with TestClient(app):
+            pass
+
+
 def test_browser_response_has_nonce_csp_and_security_headers(tmp_path):
     with make_client(tmp_path) as client:
         response = client.get("/")
@@ -373,3 +389,96 @@ def test_concurrent_audit_writes_keep_a_valid_chain(tmp_path):
         assert connection.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0] == 40
     finally:
         connection.close()
+
+
+@pytest.mark.skipif(
+    not os.getenv("TRUSTVAULT_TEST_DATABASE_URL"),
+    reason="Set TRUSTVAULT_TEST_DATABASE_URL to run PostgreSQL integration coverage",
+)
+def test_postgres_document_access_and_revocation():
+    database_url = os.environ["TRUSTVAULT_TEST_DATABASE_URL"]
+    suffix = uuid.uuid4().hex[:12]
+    admin_username = f"admin-{suffix}"
+    admin_password = "correct horse battery staple"
+    previous_admin_username = os.environ.get("TRUSTVAULT_ADMIN_USERNAME")
+    previous_admin_password = os.environ.get("TRUSTVAULT_ADMIN_PASSWORD")
+    app = create_app(database_url, b"p" * 32, environment="production")
+    os.environ["TRUSTVAULT_ADMIN_USERNAME"] = admin_username
+    os.environ["TRUSTVAULT_ADMIN_PASSWORD"] = admin_password
+    try:
+        with TestClient(app) as client:
+            admin_headers = {"Authorization": f"Bearer {login(client, admin_username)}"}
+            owner = client.post(
+                "/api/users",
+                headers=admin_headers,
+                json={
+                    "username": f"owner-{suffix}",
+                    "password": admin_password,
+                    "role": "owner",
+                },
+            )
+            viewer = client.post(
+                "/api/users",
+                headers=admin_headers,
+                json={
+                    "username": f"viewer-{suffix}",
+                    "password": admin_password,
+                    "role": "viewer",
+                },
+            )
+            assert owner.status_code == 201
+            assert viewer.status_code == 201
+
+            owner_headers = {
+                "Authorization": f"Bearer {login(client, f'owner-{suffix}')}"
+            }
+            viewer_headers = {
+                "Authorization": f"Bearer {login(client, f'viewer-{suffix}')}"
+            }
+            uploaded = client.post(
+                "/api/documents",
+                headers=owner_headers,
+                data={"name": "PostgreSQL integration", "category": "Other"},
+                files={
+                    "file": (
+                        "postgres.txt",
+                        b"encrypted postgres content",
+                        "text/plain",
+                    )
+                },
+            )
+            assert uploaded.status_code == 201
+            document_id = uploaded.json()["id"]
+            viewer_id = viewer.json()["id"]
+            assert client.get(
+                f"/api/documents/{document_id}/content", headers=viewer_headers
+            ).status_code == 404
+            assert client.put(
+                f"/api/documents/{document_id}/permissions/{viewer_id}",
+                headers=owner_headers,
+                json={"permission": "read"},
+            ).status_code == 200
+            download = client.get(
+                f"/api/documents/{document_id}/content", headers=viewer_headers
+            )
+            assert download.status_code == 200
+            assert download.content == b"encrypted postgres content"
+            assert client.delete(
+                f"/api/documents/{document_id}/permissions/{viewer_id}",
+                headers=owner_headers,
+            ).status_code == 204
+            assert client.get(
+                f"/api/documents/{document_id}/content", headers=viewer_headers
+            ).status_code == 404
+            assert client.get(
+                "/api/admin/audit/verify", headers=admin_headers
+            ).json() == {"valid": True}
+    finally:
+        if previous_admin_username is None:
+            os.environ.pop("TRUSTVAULT_ADMIN_USERNAME", None)
+        else:
+            os.environ["TRUSTVAULT_ADMIN_USERNAME"] = previous_admin_username
+        if previous_admin_password is None:
+            os.environ.pop("TRUSTVAULT_ADMIN_PASSWORD", None)
+        else:
+            os.environ["TRUSTVAULT_ADMIN_PASSWORD"] = previous_admin_password
