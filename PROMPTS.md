@@ -42,3 +42,12 @@ This log starts with the first implementation pass on 2026-10-22. Entries are re
 ## Reused context
 
 - The project requirements supplied in the initial conversation were used as the task context. No repository-specific prompt or agent instruction files were present at kickoff.
+
+## 2026-10-23
+
+- **Asked:** Review the full checkout against the TrustVault requirements, then harden the browser response against script injection and document the control.
+- **Produced:** Per-response Content Security Policy nonces for the app's inline script and styles, plus MIME-sniffing, framing, referrer, and permissions headers. Added a regression test tying the rendered nonce to the CSP and updated `API.md` and `THREATS.md`. Commit: [ec2c0fc](https://github.com/chakrithayanamadala/TrustVault/commit/ec2c0fc).
+- **What was wrong or incomplete:** The first implementation draft tried to read the nonce from application state, but the nonce is unique per request; under concurrency that could pair the wrong nonce with a response. I caught that while checking how the middleware and root route shared state, changed the route to use the request-scoped nonce, and verified the rendered HTML and response header agree in a test.
+- **What I did instead:** Kept the nonce on `request.state`, tested both the HTML response and API security headers, then ran the full test suite (10 passed). This test is an HTTP-level header/rendering check, not a substitute for browser CSP testing.
+
+The earlier entries above were present in the starting checkout and reference commit `7940f47`, which is not in this repository's available Git history. I have not treated that reference as a commit made or independently verified in this checkout.

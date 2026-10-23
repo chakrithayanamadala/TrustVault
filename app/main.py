@@ -13,8 +13,8 @@ from typing import Annotated
 from urllib.parse import quote
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
+from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -172,6 +172,29 @@ def create_app(
         yield
 
     api = FastAPI(title="TrustVault API", version="0.1.0", lifespan=lifespan)
+
+    @api.middleware("http")
+    async def add_security_headers(request, call_next):
+        nonce = secrets.token_urlsafe(18)
+        request.state.csp_nonce = nonce
+        response = await call_next(request)
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            f"script-src 'nonce-{nonce}'; "
+            f"style-src 'self' 'nonce-{nonce}'; "
+            "img-src 'self' data: blob:; "
+            "connect-src 'self'; "
+            "font-src 'self'; "
+            "object-src 'none'; "
+            "base-uri 'self'; "
+            "form-action 'self'; "
+            "frame-ancestors 'none'"
+        )
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        return response
 
     def db_dependency():
         connection = open_db(database_path)
@@ -489,8 +512,12 @@ def create_app(
         return {"status": "ok"}
 
     @api.get("/", include_in_schema=False)
-    def web_app():
-        return FileResponse(ROOT / "web" / "index.html")
+    def web_app(request: Request):
+        html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+        nonce = request.state.csp_nonce
+        html = html.replace("<style>", f'<style nonce="{nonce}">')
+        html = html.replace("<script>", f'<script nonce="{nonce}">')
+        return HTMLResponse(html)
 
     return api
 
