@@ -103,8 +103,8 @@
       h1 { font-size: 29px; }
       .side { grid-template-columns: 1fr; }
       .account span { display: none; }
-      .actions { width: 100%; }
-      .actions .button { flex: 1; }
+      .actions { width: 100%; flex-wrap: wrap; }
+      .actions .button { flex: 1 1 auto; }
       .filters input[type="date"] { flex: 1; width: auto; }
     }
   </style>
@@ -130,7 +130,7 @@
     <main id="app-view" hidden>
       <div class="toolbar">
         <div><h1>Documents</h1><p class="subtitle">A precise view of what you own and what has been shared with you.</p></div>
-        <div class="actions"><button class="button" id="audit-button" hidden>Audit activity</button><button class="button primary" id="upload-button" hidden>＋ Upload document</button></div>
+        <div class="actions"><button class="button" id="audit-button" hidden>Audit activity</button><button class="button" id="manage-users-button" hidden>＋ Create user</button><button class="button primary" id="upload-button" hidden>＋ Upload document</button></div>
       </div>
       <div class="layout">
         <section class="panel">
@@ -164,6 +164,14 @@
     <div class="modal-actions"><button class="button danger" type="button" id="revoke-button">Revoke access</button><button class="button" type="button" data-close="share-dialog">Close</button><button class="button primary" type="submit">Save access</button></div>
   </form></dialog>
   <dialog id="audit-dialog"><section class="modal"><h2>Activity record</h2><div class="table-wrap"><table><thead><tr><th>Time</th><th>Actor</th><th>Action</th></tr></thead><tbody id="audit-rows"></tbody></table></div><div class="modal-actions"><button class="button" type="button" data-close="audit-dialog">Close</button></div></section></dialog>
+  <dialog id="user-dialog"><form id="user-form" class="modal">
+    <h2>Create a user</h2><div class="form-grid">
+      <label>Username<input name="username" required minlength="3" maxlength="80" pattern="[A-Za-z0-9_.-]+" autocomplete="off"></label>
+      <label>Temporary password<input name="password" type="password" required minlength="12" maxlength="256" autocomplete="new-password"></label>
+      <label>Role<select name="role" required><option value="owner">Owner</option><option value="viewer">Viewer</option></select></label>
+      <p class="subtitle">Share the temporary password with the user securely. Admin accounts cannot be created from this form.</p>
+    </div><div class="modal-actions"><button class="button" type="button" data-close="user-dialog">Cancel</button><button class="button primary" type="submit">Create user</button></div>
+  </form></dialog>
   <script>
     const state = { token: null, role: null, user: null, documents: [], users: [], ownerChoices: new Map() };
     const $ = (selector) => document.querySelector(selector);
@@ -194,6 +202,7 @@
       const canUpload = state.role === "owner" || state.role === "admin";
       $("#upload-button").hidden = !canUpload;
       $("#audit-button").hidden = state.role !== "admin";
+      $("#manage-users-button").hidden = state.role !== "admin";
       $("#audit-panel").hidden = state.role !== "admin";
       $("#role-label").textContent = state.role;
     }
@@ -297,6 +306,32 @@
       $("#login-form").reset();
     });
     $("#upload-button").addEventListener("click", () => $("#upload-dialog").showModal());
+    $("#manage-users-button").addEventListener("click", () => $("#user-dialog").showModal());
+    $("#user-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const submit = form.querySelector('[type="submit"]');
+      const data = new FormData(form);
+      submit.disabled = true;
+      try {
+        await api("/api/users", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username: data.get("username"),
+            password: data.get("password"),
+            role: data.get("role"),
+          }),
+        });
+        $("#user-dialog").close();
+        notify(`Created ${data.get("role")} account “${data.get("username")}”`);
+      } catch (error) {
+        notify(error.message, true);
+      } finally {
+        submit.disabled = false;
+      }
+    });
+    $("#user-dialog").addEventListener("close", () => $("#user-form").reset());
     $("#upload-form").addEventListener("submit", async (event) => {
       event.preventDefault();
       const form = event.currentTarget;

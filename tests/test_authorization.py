@@ -37,6 +37,41 @@ def login(client, username):
     return response.json()["access_token"]
 
 
+def test_admin_can_create_owner_and_viewer_accounts(tmp_path):
+    with make_client(tmp_path) as client:
+        admin_headers = {"Authorization": f"Bearer {login(client, 'admin')}"}
+        owner_headers = {"Authorization": f"Bearer {login(client, 'owner')}"}
+        viewer_headers = {"Authorization": f"Bearer {login(client, 'viewer')}"}
+        for username, role in (("demo-owner", "owner"), ("demo-viewer", "viewer")):
+            password = "unique demo password"
+            created = client.post(
+                "/api/users",
+                headers=admin_headers,
+                json={"username": username, "password": password, "role": role},
+            )
+
+            assert created.status_code == 201
+            assert created.json()["id"]
+            assert created.json()["username"] == username
+            assert created.json()["role"] == role
+            assert password not in created.text
+
+            signed_in = client.post(
+                "/api/auth/login",
+                data={"username": username, "password": password},
+            )
+            assert signed_in.status_code == 200
+            assert signed_in.json()["role"] == role
+
+        denied_payload = {
+            "username": "unauthorized-user",
+            "password": "unique demo password",
+            "role": "owner",
+        }
+        assert client.post("/api/users", headers=owner_headers, json=denied_payload).status_code == 403
+        assert client.post("/api/users", headers=viewer_headers, json=denied_payload).status_code == 403
+
+
 def test_ungranted_user_cannot_read_download_or_change_document(tmp_path):
     with make_client(tmp_path) as client:
         owner_headers = {"Authorization": f"Bearer {login(client, 'owner')}"}
