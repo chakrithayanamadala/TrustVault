@@ -299,9 +299,10 @@
     $("#upload-button").addEventListener("click", () => $("#upload-dialog").showModal());
     $("#upload-form").addEventListener("submit", async (event) => {
       event.preventDefault();
+      const form = event.currentTarget;
       try {
-        await api("/api/documents", { method: "POST", body: new FormData(event.currentTarget) });
-        $("#upload-dialog").close(); event.currentTarget.reset(); notify("Encrypted document uploaded"); await refresh();
+        await api("/api/documents", { method: "POST", body: new FormData(form) });
+        $("#upload-dialog").close(); form.reset(); notify("Encrypted document uploaded"); await refresh();
       } catch (error) { notify(error.message, true); }
     });
     $("#share-form").addEventListener("submit", async (event) => {
