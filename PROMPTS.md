@@ -1,0 +1,44 @@
+# AI Prompt Log
+
+This log starts with the first implementation pass on 2026-10-22. Entries are recorded as work happens. The implementation work from this session was consolidated in one commit, rather than a week-long sequence of commits.
+
+## 2026-10-22
+
+- **Asked:** Build the initial TrustVault project from the supplied requirements, prioritizing server-enforced per-document authorization, immediate revocation, encrypted storage, and auditable denied requests.
+- **Produced:** FastAPI/SQLite API foundation, opaque sessions, per-document read/edit grants, AES-GCM encrypted bytes, hash-linked audit rows, starter docs, and authorization tests.
+- **What was wrong or incomplete:** The audit chain is only tamper-evident if its SQLite database is protected; a database administrator can rewrite it. External immutable anchoring, key management/rotation, rate limits, UI, deployment, and broad tests are not implemented. The implementation must not be described as production-ready yet.
+- **What I did instead:** Documented those limitations in `THREATS.md`, required a non-default encryption key in production mode, and started tests that directly exercise the access-control boundary. Commit: [7940f47](https://github.com/YNAGARAJ/TustVault/commit/7940f47).
+
+- **Asked:** Review authorization refusals for missing audit events and add a regression test for an editor attempting owner-only deletion.
+- **Produced:** A `deletion_denied` event before returning `403`, plus a test checking the document remains and the audit chain verifies.
+- **What was wrong or incomplete:** The first edit committed the denial event before raising; without that explicit commit, the request dependency rolled back the audit row along with the refused operation.
+- **What I did instead:** Kept the explicit commit and verified the actor, document, refusal response, and chain integrity through the API. Commit: [7940f47](https://github.com/YNAGARAJ/TustVault/commit/7940f47).
+
+- **Asked:** Check whether unknown usernames follow the same password verification path as known usernames.
+- **Produced:** A dummy scrypt salt/hash for missing accounts and a focused test that observes the hash operation on failed login.
+- **What was wrong or incomplete:** The previous `user and password_hash(...)` expression skipped expensive scrypt work when the username did not exist, creating a timing-based account enumeration signal.
+- **What I did instead:** Compute and compare a dummy hash for missing users and assert the behavior. This reduces the signal but is not a substitute for rate limiting. Commit: [7940f47](https://github.com/YNAGARAJ/TustVault/commit/7940f47).
+
+- **Asked:** Wire the existing server-side owner filter into the browser and ensure owner labels do not leak through search.
+- **Produced:** An owner selector populated from authorized document results and a cross-user owner-filter regression assertion.
+- **What was wrong or incomplete:** The first test assumed upload responses returned `owner_id`, but the upload response deliberately omits it; the endpoint itself had not failed.
+- **What I did instead:** Read the owner ID from the owner's authorized listing, reran the test, and kept owner names scoped to returned authorized documents. Commit: [7940f47](https://github.com/YNAGARAJ/TustVault/commit/7940f47).
+
+- **Asked:** Make the clean deployment instructions executable and document endpoint-specific authorization; check production startup prerequisites.
+- **Produced:** An endpoint/role reference, Docker build/run instructions, synchronized threat notes, and a production bootstrap-admin guard.
+- **What was wrong or incomplete:** Production mode could start without an admin, resulting in a service that could not create users. The first combined docs patch also failed to apply because of patch context ordering.
+- **What I did instead:** Added the admin credential guard and isolated docs into smaller edits; its lifespan test passes. The image built, and the container's health, UI, and admin login smoke checks passed locally. Commit: [7940f47](https://github.com/YNAGARAJ/TustVault/commit/7940f47).
+
+- **Asked:** Check audit-chain behavior under concurrent writes and review untrusted filenames in download headers.
+- **Produced:** A serialized audit append using a SQLite write-lock row, a concurrent-writer chain test, and filename sanitization plus UTF-8 header encoding.
+- **What was wrong or incomplete:** Audit appenders could have read the same previous hash before writing. The first concurrency test also used raw SQLite connections without the application's row factory, so it failed in test setup before chain verification.
+- **What I did instead:** Acquire the SQLite write lock before reading the prior event, use `open_db` in the stress test, verify 40 concurrent events, and test CR/LF filename handling. Commit: [7940f47](https://github.com/YNAGARAJ/TustVault/commit/7940f47).
+
+- **Asked:** Verify that successful document reads, not only refused access and downloads, are attributable in the audit record.
+- **Produced:** Events for metadata reads and for each authorized document included in a list result, with a test asserting actor and document IDs.
+- **What was wrong or incomplete:** The initial test draft included an empty-collection assertion that could never fail, so it did not actually validate the actor identity.
+- **What I did instead:** Replaced it with explicit viewer ID and document ID assertions and reran the read/revocation test. Commit: [7940f47](https://github.com/YNAGARAJ/TustVault/commit/7940f47).
+
+## Reused context
+
+- The project requirements supplied in the initial conversation were used as the task context. No repository-specific prompt or agent instruction files were present at kickoff.

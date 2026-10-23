@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>TrustVault | Document Control</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17211d;
+      --muted: #65716b;
+      --line: #dce3dd;
+      --paper: #f4f6f2;
+      --surface: #fff;
+      --green: #146b4b;
+      --green-dark: #0d4c37;
+      --mint: #e1f1e9;
+      --amber: #a65a18;
+      --danger: #a53131;
+      --shadow: 0 16px 48px rgba(24, 47, 35, .08);
+      font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+      font-size: 14px;
+      color: var(--ink);
+      background: var(--paper);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: radial-gradient(ellipse at 78% 0%, #e4efe6 0, transparent 38%), var(--paper); }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    .shell { width: min(1200px, calc(100% - 40px)); margin: 0 auto; }
+    header { height: 72px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
+    .brand { display: flex; gap: 12px; align-items: center; font-weight: 700; letter-spacing: 0; }
+    .brand-mark { width: 32px; height: 32px; display: grid; place-items: center; background: var(--green); color: white; border-radius: 8px 8px 8px 2px; font-family: Georgia, serif; font-size: 19px; }
+    .brand small { display: block; color: var(--muted); font-weight: 500; font-size: 11px; margin-top: 2px; }
+    .account { display: flex; gap: 14px; align-items: center; color: var(--muted); }
+    .account strong { color: var(--ink); }
+    main { padding: 38px 0 64px; }
+    .toolbar { display: flex; justify-content: space-between; align-items: end; gap: 20px; margin-bottom: 25px; }
+    h1 { font-family: Georgia, "Times New Roman", serif; font-size: 34px; line-height: 1.1; font-weight: 500; letter-spacing: 0; margin: 0 0 7px; }
+    .subtitle { margin: 0; color: var(--muted); }
+    .actions { display: flex; gap: 9px; }
+    .button { border: 1px solid var(--line); background: white; color: var(--ink); border-radius: 6px; padding: 9px 13px; font-weight: 650; transition: background .15s, transform .15s; }
+    .button:hover { background: #f0f5f1; transform: translateY(-1px); }
+    .button.primary { background: var(--green); color: white; border-color: var(--green); }
+    .button.primary:hover { background: var(--green-dark); }
+    .button.danger { color: var(--danger); }
+    .layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 22px; align-items: start; }
+    .panel { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; box-shadow: var(--shadow); }
+    .filters { display: flex; gap: 10px; align-items: center; padding: 13px; border-bottom: 1px solid var(--line); }
+    input, select { color: var(--ink); background: white; border: 1px solid var(--line); border-radius: 5px; padding: 9px 10px; min-height: 38px; outline: none; }
+    input:focus, select:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(20,107,75,.12); }
+    .filters input[type="search"] { flex: 1; min-width: 130px; }
+    .filters input[type="date"] { width: 150px; }
+    .table-wrap { overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; min-width: 620px; }
+    th { text-align: left; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; padding: 13px 15px; background: #fbfcfa; }
+    td { padding: 14px 15px; border-top: 1px solid #edf0ec; vertical-align: middle; }
+    tr { animation: rise .24s both; }
+    .doc-name { font-weight: 700; }
+    .doc-file { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; }
+    .pill { display: inline-flex; align-items: center; gap: 6px; background: var(--mint); color: var(--green-dark); padding: 5px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+    .row-actions { display: flex; gap: 6px; justify-content: end; }
+    .icon-button { border: 1px solid var(--line); background: white; color: var(--ink); border-radius: 5px; width: 34px; height: 32px; display: grid; place-items: center; }
+    .icon-button:hover { border-color: var(--green); color: var(--green); }
+    .side { display: grid; gap: 15px; }
+    .side-section { padding: 18px; }
+    .side h2 { margin: 0 0 13px; font-size: 13px; letter-spacing: .02em; }
+    .stat { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-top: 1px solid #edf0ec; color: var(--muted); }
+    .stat strong { color: var(--ink); font-size: 16px; }
+    .audit-status { display: flex; align-items: center; gap: 8px; font-weight: 650; }
+    .dot { width: 8px; height: 8px; background: #208358; border-radius: 50%; }
+    .empty { padding: 48px 20px; text-align: center; color: var(--muted); }
+    .empty strong { display: block; color: var(--ink); margin-bottom: 5px; }
+    .notice { position: fixed; right: 22px; bottom: 22px; max-width: 380px; background: var(--ink); color: white; padding: 13px 16px; border-radius: 6px; box-shadow: var(--shadow); z-index: 5; animation: rise .2s both; }
+    .notice.error { background: var(--danger); }
+    dialog { width: min(480px, calc(100% - 28px)); border: 1px solid var(--line); border-radius: 8px; padding: 0; box-shadow: 0 24px 80px rgba(0,0,0,.2); }
+    dialog::backdrop { background: rgba(15,29,22,.38); backdrop-filter: blur(2px); }
+    .modal { padding: 23px; }
+    .modal h2 { font: 500 25px/1.15 Georgia, serif; margin: 0 0 19px; }
+    .form-grid { display: grid; gap: 13px; }
+    .form-grid label { display: grid; gap: 6px; font-size: 12px; color: var(--muted); font-weight: 650; }
+    .modal-actions { display: flex; justify-content: end; gap: 8px; margin-top: 22px; }
+    .login { min-height: calc(100vh - 73px); display: grid; place-items: center; }
+    .login-panel { width: min(430px, 100%); padding: 28px; }
+    .login-panel p { color: var(--muted); margin: 0 0 23px; }
+    .login-panel h1 { font-size: 32px; margin: 0 0 8px; }
+    #login-form { display: grid; gap: 13px; }
+    .wide { width: 100%; }
+    [hidden] { display: none !important; }
+    @keyframes rise { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+    @media (max-width: 800px) {
+      .layout { grid-template-columns: 1fr; }
+      .side { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .toolbar { align-items: start; flex-direction: column; }
+      .filters { flex-wrap: wrap; }
+      .filters input[type="search"] { flex-basis: 100%; }
+    }
+    @media (max-width: 520px) {
+      .shell { width: min(100% - 24px, 1200px); }
+      header { height: 62px; }
+      main { padding-top: 26px; }
+      h1 { font-size: 29px; }
+      .side { grid-template-columns: 1fr; }
+      .account span { display: none; }
+      .actions { width: 100%; }
+      .actions .button { flex: 1; }
+      .filters input[type="date"] { flex: 1; width: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div class="brand"><span class="brand-mark">T</span><span>TrustVault<small>DOCUMENT CONTROL</small></span></div>
+      <div class="account" id="account" hidden><span id="identity"></span><button class="button" id="logout">Sign out</button></div>
+    </header>
+    <main id="login-view" class="login">
+      <section class="panel login-panel">
+        <h1>Your files,<br>under control.</h1>
+        <p>Sign in to access documents shared specifically with you.</p>
+        <form id="login-form">
+          <label class="form-grid">Username<input name="username" required autocomplete="username"></label>
+          <label class="form-grid">Password<input name="password" type="password" required autocomplete="current-password"></label>
+          <button class="button primary wide" type="submit">Sign in securely</button>
+          <div id="login-error" role="alert"></div>
+        </form>
+      </section>
+    </main>
+    <main id="app-view" hidden>
+      <div class="toolbar">
+        <div><h1>Documents</h1><p class="subtitle">A precise view of what you own and what has been shared with you.</p></div>
+        <div class="actions"><button class="button" id="audit-button" hidden>Audit activity</button><button class="button primary" id="upload-button" hidden>＋ Upload document</button></div>
+      </div>
+      <div class="layout">
+        <section class="panel">
+          <div class="filters">
+            <input id="search" type="search" placeholder="Search document names" aria-label="Search document names">
+            <select id="owner-filter" aria-label="Filter by owner"><option value="">All owners</option></select>
+            <select id="category-filter" aria-label="Filter by category"><option value="">All categories</option><option>Contracts</option><option>Finance</option><option>HR</option><option>Legal</option><option>Operations</option><option>Other</option></select>
+            <input id="date-from" type="date" aria-label="Created after">
+            <input id="date-to" type="date" aria-label="Created before">
+          </div>
+          <div class="table-wrap"><table><thead><tr><th>Document</th><th>Category</th><th>Updated</th><th></th></tr></thead><tbody id="documents"></tbody></table></div>
+          <div class="empty" id="empty" hidden><strong>No documents found</strong>Try another search or upload a document.</div>
+        </section>
+        <aside class="side">
+          <section class="panel side-section"><h2>YOUR VAULT</h2><div class="stat"><span>Documents visible</span><strong id="document-count">0</strong></div><div class="stat"><span>Role</span><strong id="role-label">Viewer</strong></div></section>
+          <section class="panel side-section" id="audit-panel" hidden><h2>AUDIT INTEGRITY</h2><div class="audit-status"><span class="dot"></span><span id="audit-state">Checking chain...</span></div><div class="stat"><span>Recorded events</span><strong id="event-count">0</strong></div></section>
+        </aside>
+      </div>
+    </main>
+  </div>
+  <dialog id="upload-dialog"><form id="upload-form" class="modal">
+    <h2>Add to the vault</h2><div class="form-grid">
+      <label>Document name<input name="name" required maxlength="200"></label>
+      <label>Category<select name="category" required><option value="">Choose category</option><option>Contracts</option><option>Finance</option><option>HR</option><option>Legal</option><option>Operations</option><option>Other</option></select></label>
+      <label>File (PDF, PNG, JPEG or UTF-8 text, max 10 MiB)<input name="file" type="file" accept=".pdf,.png,.jpg,.jpeg,.txt" required></label>
+    </div><div class="modal-actions"><button class="button" type="button" data-close="upload-dialog">Cancel</button><button class="button primary" type="submit">Encrypt and upload</button></div>
+  </form></dialog>
+  <dialog id="share-dialog"><form id="share-form" class="modal">
+    <h2>Manage access</h2><input name="document_id" type="hidden">
+    <div class="form-grid"><label>Person<select name="user_id" required></select></label><label>Permission<select name="permission"><option value="read">Read</option><option value="edit">Edit</option></select></label></div>
+    <div class="modal-actions"><button class="button danger" type="button" id="revoke-button">Revoke access</button><button class="button" type="button" data-close="share-dialog">Close</button><button class="button primary" type="submit">Save access</button></div>
+  </form></dialog>
+  <dialog id="audit-dialog"><section class="modal"><h2>Activity record</h2><div class="table-wrap"><table><thead><tr><th>Time</th><th>Actor</th><th>Action</th></tr></thead><tbody id="audit-rows"></tbody></table></div><div class="modal-actions"><button class="button" type="button" data-close="audit-dialog">Close</button></div></section></dialog>
+  <script>
+    const state = { token: null, role: null, user: null, documents: [], users: [], ownerChoices: new Map() };
+    const $ = (selector) => document.querySelector(selector);
+    async function api(path, options = {}) {
+      const headers = new Headers(options.headers || {});
+      if (state.token) headers.set("Authorization", `Bearer ${state.token}`);
+      const response = await fetch(path, { ...options, headers });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.detail || `Request failed (${response.status})`);
+      }
+      return response.status === 204 ? null : response;
+    }
+    function notify(message, isError = false) {
+      const note = document.createElement("div");
+      note.className = `notice${isError ? " error" : ""}`;
+      note.textContent = message;
+      document.body.append(note);
+      setTimeout(() => note.remove(), 3200);
+    }
+    function date(value) { return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value)); }
+    function showApp() {
+      $("#login-view").hidden = true; $("#app-view").hidden = false; $("#account").hidden = false;
+      $("#identity").innerHTML = "";
+      const identity = document.createElement("strong"); identity.textContent = `${state.user} `;
+      const role = document.createElement("span"); role.textContent = `· ${state.role}`;
+      $("#identity").append(identity, role);
+      const canUpload = state.role === "owner" || state.role === "admin";
+      $("#upload-button").hidden = !canUpload;
+      $("#audit-button").hidden = state.role !== "admin";
+      $("#audit-panel").hidden = state.role !== "admin";
+      $("#role-label").textContent = state.role;
+    }
+    async function refresh() {
+      const params = new URLSearchParams();
+      if ($("#search").value) params.set("q", $("#search").value);
+      if ($("#owner-filter").value) params.set("owner", $("#owner-filter").value);
+      if ($("#category-filter").value) params.set("category", $("#category-filter").value);
+      if ($("#date-from").value) params.set("created_after", new Date(`${$("#date-from").value}T00:00:00Z`).toISOString());
+      if ($("#date-to").value) params.set("created_before", new Date(`${$("#date-to").value}T23:59:59Z`).toISOString());
+      const response = await api(`/api/documents?${params}`);
+      state.documents = await response.json();
+      renderDocuments();
+      if (state.role === "admin") await refreshAuditStatus();
+    }
+    function renderDocuments() {
+      const body = $("#documents"); body.replaceChildren();
+      $("#document-count").textContent = state.documents.length;
+      $("#empty").hidden = state.documents.length !== 0;
+      const ownerSelect = $("#owner-filter");
+      const selectedOwner = ownerSelect.value;
+      for (const document of state.documents) state.ownerChoices.set(document.owner_id, document.owner_username);
+      const existingOwners = new Set(Array.from(ownerSelect.options, (option) => option.value));
+      for (const [ownerId, username] of state.ownerChoices) {
+        if (existingOwners.has(ownerId)) continue;
+        const option = document.createElement("option"); option.value = ownerId; option.textContent = username; ownerSelect.append(option);
+      }
+      ownerSelect.value = selectedOwner;
+      for (const [index, doc] of state.documents.entries()) {
+        const row = document.createElement("tr"); row.style.animationDelay = `${index * 25}ms`;
+        const fileCell = document.createElement("td");
+        const name = document.createElement("span"); name.className = "doc-name"; name.textContent = doc.name;
+        const filename = document.createElement("span"); filename.className = "doc-file"; filename.textContent = doc.filename;
+        fileCell.append(name, filename);
+        const category = document.createElement("td"); const pill = document.createElement("span"); pill.className = "pill"; pill.textContent = doc.category; category.append(pill);
+        const updated = document.createElement("td"); updated.textContent = date(doc.updated_at);
+        const actions = document.createElement("td"); const group = document.createElement("div"); group.className = "row-actions";
+        const download = document.createElement("button"); download.className = "icon-button"; download.title = "Download document"; download.setAttribute("aria-label", "Download document"); download.textContent = "↓";
+        download.addEventListener("click", () => downloadDocument(doc)); group.append(download);
+        if (doc.owner_id === state.userId && (state.role === "owner" || state.role === "admin")) {
+          const share = document.createElement("button"); share.className = "icon-button"; share.title = "Manage access"; share.setAttribute("aria-label", "Manage access"); share.textContent = "♧";
+          share.addEventListener("click", () => openShare(doc)); group.append(share);
+          const remove = document.createElement("button"); remove.className = "icon-button"; remove.title = "Delete document"; remove.setAttribute("aria-label", "Delete document"); remove.textContent = "×";
+          remove.addEventListener("click", () => deleteDocument(doc)); group.append(remove);
+        }
+        actions.append(group); row.append(fileCell, category, updated, actions); body.append(row);
+      }
+    }
+    async function downloadDocument(doc) {
+      try {
+        const response = await api(`/api/documents/${encodeURIComponent(doc.id)}/content`);
+        const url = URL.createObjectURL(await response.blob());
+        const link = document.createElement("a"); link.href = url; link.download = doc.filename; link.click(); URL.revokeObjectURL(url);
+      } catch (error) { notify(error.message, true); }
+    }
+    async function deleteDocument(doc) {
+      if (!confirm(`Permanently delete “${doc.name}”?`)) return;
+      try { await api(`/api/documents/${encodeURIComponent(doc.id)}`, { method: "DELETE" }); notify("Document deleted"); await refresh(); }
+      catch (error) { notify(error.message, true); }
+    }
+    async function openShare(doc) {
+      try {
+        const response = await api("/api/users"); state.users = await response.json();
+        const select = $("#share-form [name=user_id]"); select.replaceChildren();
+        for (const user of state.users.filter((item) => item.id !== state.userId)) {
+          const option = document.createElement("option"); option.value = user.id; option.textContent = `${user.username} · ${user.role}`; select.append(option);
+        }
+        $("#share-form [name=document_id]").value = doc.id;
+        $("#share-dialog").showModal();
+      } catch (error) { notify(error.message, true); }
+    }
+    async function refreshAuditStatus() {
+      const [integrityResponse, eventsResponse] = await Promise.all([api("/api/admin/audit/verify"), api("/api/admin/audit?limit=100")]);
+      const integrity = await integrityResponse.json(); const events = await eventsResponse.json();
+      $("#audit-state").textContent = integrity.valid ? "Chain verified" : "Integrity failure";
+      $("#audit-state").style.color = integrity.valid ? "var(--green-dark)" : "var(--danger)";
+      $("#event-count").textContent = events.length;
+    }
+    $("#login-form").addEventListener("submit", async (event) => {
+      event.preventDefault(); $("#login-error").textContent = "";
+      try {
+        const form = new FormData(event.currentTarget);
+        const response = await fetch("/api/auth/login", { method: "POST", body: form });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "Sign-in failed");
+        state.token = result.access_token; state.role = result.role;
+        const me = await api("/api/documents");
+        state.user = form.get("username");
+        const usersResponse = state.role === "owner" || state.role === "admin" ? await api("/api/users") : null;
+        if (usersResponse) {
+          const users = await usersResponse.json();
+          state.userId = users.find((item) => item.username.toLowerCase() === state.user.toLowerCase())?.id;
+        }
+        showApp(); await refresh();
+      } catch (error) { $("#login-error").textContent = error.message; }
+    });
+    $("#logout").addEventListener("click", async () => {
+      try { await api("/api/auth/logout", { method: "POST" }); } catch {}
+      state.token = null; state.role = null; state.user = null; state.userId = null;
+      $("#app-view").hidden = true; $("#account").hidden = true; $("#login-view").hidden = false;
+      $("#login-form").reset();
+    });
+    $("#upload-button").addEventListener("click", () => $("#upload-dialog").showModal());
+    $("#upload-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      try {
+        await api("/api/documents", { method: "POST", body: new FormData(event.currentTarget) });
+        $("#upload-dialog").close(); event.currentTarget.reset(); notify("Encrypted document uploaded"); await refresh();
+      } catch (error) { notify(error.message, true); }
+    });
+    $("#share-form").addEventListener("submit", async (event) => {
+      event.preventDefault(); const form = new FormData(event.currentTarget); const id = form.get("document_id");
+      try {
+        await api(`/api/documents/${encodeURIComponent(id)}/permissions/${encodeURIComponent(form.get("user_id"))}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ permission: form.get("permission") }) });
+        notify("Access updated"); $("#share-dialog").close();
+      } catch (error) { notify(error.message, true); }
+    });
+    $("#revoke-button").addEventListener("click", async () => {
+      const form = new FormData($("#share-form")); const id = form.get("document_id"); const user = form.get("user_id");
+      try {
+        await api(`/api/documents/${encodeURIComponent(id)}/permissions/${encodeURIComponent(user)}`, { method: "DELETE" });
+        notify("Access revoked immediately"); $("#share-dialog").close();
+      } catch (error) { notify(error.message, true); }
+    });
+    $("#audit-button").addEventListener("click", async () => {
+      try {
+        const response = await api("/api/admin/audit?limit=100"); const rows = await response.json(); const body = $("#audit-rows"); body.replaceChildren();
+        for (const event of rows) {
+          const row = document.createElement("tr");
+          for (const value of [new Date(event.occurred_at).toLocaleString(), event.actor_id || "anonymous", event.action]) { const cell = document.createElement("td"); cell.textContent = value; row.append(cell); }
+          body.append(row);
+        }
+        $("#audit-dialog").showModal();
+      } catch (error) { notify(error.message, true); }
+    });
+    document.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => document.getElementById(button.dataset.close).close()));
+    let searchTimer;
+    $("#search").addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => refresh().catch((error) => notify(error.message, true)), 220); });
+    ["#owner-filter", "#category-filter", "#date-from", "#date-to"].forEach((selector) => $(selector).addEventListener("change", () => refresh().catch((error) => notify(error.message, true))));
+  </script>
+</body>
+</html>

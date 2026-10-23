@@ -1,0 +1,26 @@
+# Threats and Security Decisions
+
+This is the first implementation pass. The items below describe controls present now and gaps that remain; do not treat this document as a claim of a completed production security review.
+
+| Threat | Current control | Remaining risk / accepted limitation |
+| --- | --- | --- |
+| Guessing another document ID or calling a hidden API route | Every document read, download, edit, share, and delete checks ownership or a current per-user grant on the server. Unauthorized document lookups return the same 404 response as missing IDs. | Automated coverage currently exercises the common API paths, not a full fuzz or penetration test. Add regression coverage for every new endpoint. |
+| Revoked user reusing an old session or previously issued URL | Sessions are opaque, stored server-side, and contain no document grants; each document request re-reads the current grant. No public object-store URL is issued. | A person who already downloaded plaintext can retain a copy. This cannot be revoked cryptographically. |
+| Reading raw database files or backups | File bytes are AES-256-GCM encrypted with a per-file random nonce and document ID as associated data. | One application encryption key encrypts all documents. Key rotation, KMS/HSM integration, and encrypted backups are not implemented. Protect the key independently; local development uses a known non-production key. |
+| Silently changing or concurrently forking audit history | Events are chained with SHA-256 links; an SQLite write-lock row serializes appenders before they read the prior hash. Successful document metadata/list reads, downloads, changes, deletions, permission changes, and access denials are recorded. Administrator endpoint verifies the chain, and concurrent appends are tested. | The chain is stored in the same SQLite database. A database administrator can replace history and recompute hashes. No external signed checkpoint, WORM storage, or independent timestamp authority exists yet. |
+| Forged/spoofed identity or stolen session | Passwords use salted scrypt; session tokens are high-entropy random values stored only as hashes, expire after eight hours, and are invalidated by logout. | No MFA, rate limiting, account lockout, session inventory, or automated user deprovisioning yet. Deploy behind TLS. |
+| Malicious upload or path traversal | 10 MiB limit, extension and file-signature checks for PDF/PNG/JPEG, UTF-8 validation for text, filename reduced to basename, encrypted bytes stored in SQLite (not served from a filesystem path). | Antivirus/CDR, PDF parser inspection, and content-disarm are not included. Only these four formats are accepted. |
+| SQL injection | SQL values use bound parameters; dynamic update field names come only from a fixed Pydantic model. | Continue to review all query construction as endpoints are added. |
+| Cross-user search leakage | Listing starts from the owner-or-current-grant SQL predicate before applying search filters. Owner names are returned only for documents in that authorized result set. | No load testing or query-plan review yet. |
+| Admin abuse or compromised admin account | Admin role does not imply document permission; audit endpoint is role-gated. | Admin can create users, including another admin. Admin actions are audited, but there is no approval workflow or alerting. |
+| Deleting an audit event or document then denying it happened | Document deletion writes an audit event before deleting the row; document IDs and details are included in the chain. | SQLite itself is not append-only. Audit retention policy and recovery are not implemented. |
+| Resource exhaustion | Upload size and list result limit are bounded; SQLite connection timeout is set. | Login throttling, request-wide limits, storage quotas, and concurrency/load tests are absent. |
+| Browser cross-site request abuse and script injection | The same-origin browser UI keeps the bearer token in JavaScript memory rather than cookies or persistent browser storage; no permissive CORS middleware is configured. | There is no Content Security Policy or general security-header middleware. A same-origin script injection could use the active token. A page reload loses the session token. Add CSP/security headers and browser security testing before production. |
+
+## Permission model
+
+Grants are direct, document-specific rows keyed by `(document_id, user_id)`. No folder inheritance or role-based implicit sharing exists. Owners own their documents; admin/viewer/owner role alone never makes a document readable. `read` permits metadata and content; `edit` permits those plus metadata updates. Only the owner may manage grants or delete the document. A revocation removes the row immediately, and every request checks the database again.
+
+## Production blockers
+
+Before handling real confidential documents, add an external KMS and key rotation, an external immutable audit sink with independently signed checkpoints, TLS and deployment hardening, rate limiting, backups/restore drills, security headers and CORS rules for the eventual UI, monitoring, and a reviewed migration/deployment process. This application is an executable foundation, not yet a claim of production certification.
