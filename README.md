@@ -1,6 +1,6 @@
 # TrustVault
 
-TrustVault is a document-sharing API and browser UI built with FastAPI, SQLite, and AES-GCM. This repository is a security-focused challenge implementation, not a production-certified document service. There is no hosted demo URL or public demo credential configured by this checkout.
+TrustVault is a document-sharing API and browser UI built with FastAPI, SQLite/PostgreSQL, and AES-GCM. A live Vercel deployment is available at <https://trust-vault-pi.vercel.app>; `/health` returns `{"status":"ok"}`. This is a security-focused challenge implementation, not a production-certified document service. No public demo credentials are provided.
 
 ## Run locally
 
@@ -13,6 +13,11 @@ python -m venv .venv
 . .venv/bin/activate
 python -m pip install -r requirements-dev.txt
 python -m pytest -q
+```
+
+Set local bootstrap credentials, then start the development server:
+
+```sh
 export TRUSTVAULT_ADMIN_USERNAME=admin
 read -rsp "Initial admin password: " TRUSTVAULT_ADMIN_PASSWORD
 echo
@@ -20,7 +25,9 @@ export TRUSTVAULT_ADMIN_PASSWORD
 uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Open <http://127.0.0.1:8000>. Local development uses a fixed, non-production encryption key and does not create an initial admin automatically. Create the first admin through the bootstrap environment variables described below.
+Open <http://127.0.0.1:8000> and sign in with the username and password set above. Local development uses SQLite (`trustvault.db`) and a fixed, non-production encryption key; never use this development key for real documents. The bootstrap admin is created when the local database is initialized. If it already exists, changing the environment password does not reset that account's password.
+
+After signing in as admin, select **Create user** to provision an **Owner** or **Viewer** account. Owners can upload and manage their own documents. Viewers can sign in but need an owner to grant them document access. Admin accounts do not automatically have access to documents.
 
 ## Container deployment
 
@@ -32,7 +39,11 @@ Generate and retain an independent 32-byte encryption key, and set a strong init
 export TRUSTVAULT_ENCRYPTION_KEY="$(python -c 'import base64,secrets; print(base64.b64encode(secrets.token_bytes(32)).decode())')"
 read -rsp "Initial admin password: " TRUSTVAULT_ADMIN_PASSWORD
 echo
+export TRUSTVAULT_ADMIN_PASSWORD
 export TRUSTVAULT_ADMIN_USERNAME=admin
+read -rsp "PostgreSQL connection URL: " TRUSTVAULT_DATABASE_URL
+echo
+export TRUSTVAULT_DATABASE_URL
 docker build -t trustvault .
 docker run --rm --name trustvault \
   -p 127.0.0.1:8000:8000 \
@@ -45,7 +56,7 @@ docker run --rm --name trustvault \
 
 Supply `TRUSTVAULT_DATABASE_URL` from a persistent PostgreSQL instance before running the container. Do not lose or rotate `TRUSTVAULT_ENCRYPTION_KEY` without first implementing a data re-encryption/migration plan: existing files cannot be decrypted with a different key. Back up the database and key separately, restrict access to both, and test restore procedures. The bootstrap admin is created only when its username does not already exist; changing the environment password does not change an existing account's password.
 
-The container listens on port 8000. The sample binds it to loopback and is not a complete public deployment by itself. A public deployment still needs HTTPS, persistent database storage, backups, monitoring, account provisioning, and a secure method to deliver credentials to the judge. No provider, live URL, or judge credentials are being claimed here.
+The container listens on port 8000. The sample binds it to loopback and is not a complete public deployment by itself. A public deployment still needs HTTPS, persistent database storage, backups, monitoring, and a secure method to deliver credentials to testers.
 
 ## Deploy on Vercel, Render, or Netlify
 
@@ -67,7 +78,21 @@ Generate the encryption key locally with `python -c 'import base64,secrets; prin
 
 ### [Vercel](https://vercel.com/docs/frameworks/backend/fastapi) (FastAPI backend)
 
-Import the repository as a Python project; the root `index.py` exports the FastAPI application and `vercel.json` includes the schema and UI files. Add all five variables above to the Vercel project for the desired environment, then deploy. The PostgreSQL service must allow connections from the app; prefer a pooled TLS connection URL. Vercel's function filesystem is not used for document persistence.
+Import the repository as a Python project; the root `index.py` exports the FastAPI application and `vercel.json` includes the schema and UI files. In **Project Settings → Environment Variables**, configure the following for **Production**:
+
+| Variable | Value |
+| --- | --- |
+| `TRUSTVAULT_ENV` | `production` |
+| `TRUSTVAULT_DATABASE_URL` | Neon PostgreSQL connection URL with TLS; Vercel's Neon integration provides `POSTGRES_URL` (copy its value into this variable) |
+| `TRUSTVAULT_ENCRYPTION_KEY` | Base64-encoded independent 32-byte key |
+| `TRUSTVAULT_ADMIN_USERNAME` | Initial administrator username |
+| `TRUSTVAULT_ADMIN_PASSWORD` | Initial administrator password, at least 12 characters |
+
+Keep these values secret. `TRUSTVAULT_DATABASE_URL` is the variable the app reads; setting only Neon’s `POSTGRES_URL` is not sufficient. After adding or changing a variable, redeploy the Production deployment so the function receives the updated environment. Verify <https://trust-vault-pi.vercel.app/health> returns `{"status":"ok"}`.
+
+The bootstrap administrator is inserted only if that username does not already exist. Changing `TRUSTVAULT_ADMIN_PASSWORD` does not reset an existing user's password. Vercel's function filesystem is not used for document persistence.
+
+Preview deployments also need their own `TRUSTVAULT_ENV`, database URL, encryption key, and bootstrap credentials if you want to exercise the app there. Prefer a separate preview database and key; do not point previews at production data unless that is intentional.
 
 ### [Render](https://render.com/docs/deploy-fastapi) (FastAPI backend)
 
@@ -77,22 +102,13 @@ Create a Render Blueprint from this repository using `render.yaml`, or create a 
 
 Netlify does not run this Python ASGI application as a Netlify Function. Deploy the FastAPI backend to Vercel or Render first, then edit `web/_redirects` and replace `your-trustvault-api.example.com` with that backend's HTTPS hostname. Deploy this repository to Netlify with `netlify.toml`; it publishes `web/` and force-proxies every path to the backend so both the dynamic UI and API remain same-origin to the browser. Confirm the deployed URL serves the dynamically nonce-protected HTML from the backend and can log in before sharing it.
 
-These are deployment configurations, not proof that a provider account has been provisioned or that a live URL exists. The app is not production-certified: its audit chain remains in PostgreSQL and can be rewritten by a database administrator; no external immutable audit anchor or rate limiting is implemented.
+The live Vercel deployment is <https://trust-vault-pi.vercel.app>. Its production health endpoint is <https://trust-vault-pi.vercel.app/health>. The following provider instructions describe how to reproduce or update the deployment; they do not guarantee provider plan availability, free service, or no-credit-card signup. The app is not production-certified: its audit chain remains in PostgreSQL and can be rewritten by a database administrator; no external immutable audit anchor or rate limiting is implemented.
 
 ## First users and demo data
 
-On a fresh database, sign in as the bootstrap administrator and use **Create user** to provision owner or viewer accounts in the browser; `POST /api/users` remains available for API-based provisioning. Use unique passwords of at least 12 characters and deliver them out of band; never commit real passwords, access tokens, or encryption keys.
+To create a test account, sign in with the administrator credentials and select **Create user**. Choose **Owner** if the tester needs to upload documents, or **Viewer** if they should only access documents shared with them. Set a unique password of at least 12 characters and deliver credentials privately; never commit real passwords, access tokens, or encryption keys. `POST /api/users` is also available for API-based provisioning.
 
-Example user creation request after obtaining an admin bearer token:
-
-```sh
-curl -X POST http://127.0.0.1:8000/api/users \
-  -H "Authorization: Bearer $ADMIN_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"username":"owner-demo","password":"REPLACE_WITH_A_UNIQUE_SECRET","role":"owner"}'
-```
-
-Create a viewer account, sign in as the owner, upload a small UTF-8 `.txt` file, and grant the viewer `read` access through the UI or `PUT /api/documents/{document_id}/permissions/{target_user_id}`. Verify the viewer can download it, then revoke access and verify the next request returns `404`. Use synthetic, non-confidential content only.
+For a sharing test, sign in as an owner, upload a small UTF-8 `.txt` file, and grant a viewer `read` access through the document's access controls or `PUT /api/documents/{document_id}/permissions/{target_user_id}`. Sign in as the viewer and verify they can download the file. Revoke the grant and verify the viewer's next request returns `404`. Use synthetic, non-confidential content only.
 
 ## Design and security boundaries
 
@@ -106,9 +122,9 @@ Create a viewer account, sign in as the owner, upload a small UTF-8 `.txt` file,
 
 ## Verification and hand-in status
 
-Run the automated suite with `python -m pytest -q`. It covers authorization/refusal paths, immediate revocation, role boundaries, read-vs-edit grants, cross-user search isolation, upload validation, audit-chain tampering and concurrent appends, login work for unknown users, production bootstrap requirements, and security headers. PostgreSQL integration coverage is skipped unless `TRUSTVAULT_TEST_DATABASE_URL` points to a dedicated disposable PostgreSQL test database; run it with `TRUSTVAULT_TEST_DATABASE_URL="$TEST_DATABASE_URL" python -m pytest -q -k postgres_document_access_and_revocation`.
+Run the automated suite from the repository root with `python -m pytest -q`. It covers admin user creation and login, authorization/refusal paths, immediate revocation, role boundaries, read-vs-edit grants, cross-user search isolation, upload validation, audit-chain tampering and concurrent appends, login work for unknown users, production bootstrap requirements, and security headers. PostgreSQL integration coverage is skipped unless `TRUSTVAULT_TEST_DATABASE_URL` points to a dedicated disposable PostgreSQL test database; run it with `TRUSTVAULT_TEST_DATABASE_URL="$TEST_DATABASE_URL" python -m pytest -q -k postgres_document_access_and_revocation`.
 
-Endpoint-specific authorization is in [API.md](API.md); current and accepted threat gaps are in [THREATS.md](THREATS.md). The original prompt's ten functional requirements are the target; this repo has no separate supplied requirement file. A hosted judge URL, pre-seeded judge account credentials, a recorded five-minute demo video, external immutable audit anchoring, rate limiting, and production key management are not included by this local checkout. Complete those as real deployment/operator actions before describing a public demo as ready.
+Endpoint-specific authorization is in [API.md](API.md); current and accepted threat gaps are in [THREATS.md](THREATS.md). The live app is deployed, but no public test credentials are supplied. Create separate owner/viewer accounts from the admin UI for demos, and deliver their credentials privately. External immutable audit anchoring, rate limiting, independent production key management, backups, monitoring, and a recorded demo video are not included; review these limits before using the service for sensitive data.
 
 ### Five-minute demo outline
 
